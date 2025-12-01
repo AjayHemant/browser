@@ -1,9 +1,7 @@
 // main.js
 
 // Modules to control application life and create native browser window
-const { ElectronBlocker } = require('@ghostery/adblocker-electron');
 const { app, BrowserWindow, ipcMain, session } = require('electron');
-const fetch = require('cross-fetch');
 const path = require('path');
 
 function createWindow() {
@@ -15,7 +13,9 @@ function createWindow() {
       // The preload script is a bridge between the Node.js world (main process)
       // and the web page world (renderer process).
       preload: path.join(__dirname, 'preload.js'),
-      webviewTag: true, // <-- Add this line to enable the <webview> tag
+      webviewTag: true, // Enable <webview> tag
+      nodeIntegration: false,
+      contextIsolation: true,
     },
   });
 
@@ -26,8 +26,15 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  // Load the index.html of the app. This is our browser's UI.
-  mainWindow.loadFile('index.html');
+  // Load the Flask app
+  // We wait a bit for Flask to start in run.sh
+  mainWindow.loadURL('http://127.0.0.1:5000').catch(err => {
+    console.error('Failed to load Flask app:', err);
+    // Retry once after 2 seconds
+    setTimeout(() => {
+      mainWindow.loadURL('http://127.0.0.1:5000').catch(e => console.error('Retry failed:', e));
+    }, 2000);
+  });
 
   // Remove the default menu bar (File, Edit, View, etc.)
   mainWindow.removeMenu();
@@ -39,50 +46,130 @@ function createWindow() {
   ipcMain.on('navigate-to', (event, url) => {
     mainWindow.webContents.loadURL(url);
   });
+
+  // Handle new incognito window
+  ipcMain.on('new-incognito-window', () => {
+    const incognitoWindow = new BrowserWindow({
+      width: 1280,
+      height: 800,
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        webviewTag: true,
+        partition: 'incognito' // Use a temporary partition for the window itself
+      },
+    });
+
+    incognitoWindow.loadURL('http://127.0.0.1:5000/?incognito=true');
+    incognitoWindow.removeMenu();
+  });
+
+  // Handle window close event - warn about incognito tabs
+  let isClosing = false;
+  mainWindow.on('close', async (e) => {
+    if (isClosing) return;
+
+    e.preventDefault();
+
+    try {
+      const hasIncognitoTabs = await mainWindow.webContents.executeJavaScript(
+        'typeof state !== "undefined" && state.tabs ? state.tabs.some(tab => tab.isIncognito) : false'
+      ).catch(() => false); // Catch error if state is undefined
+
+      if (hasIncognitoTabs) {
+        const { dialog } = require('electron');
+        const choice = dialog.showMessageBoxSync(mainWindow, {
+          type: 'warning',
+          buttons: ['Cancel', 'Close Anyway'],
+          title: 'Incognito Tabs Open',
+          message: 'You have incognito tabs open. They will be closed and not saved.',
+          defaultId: 0,
+          cancelId: 0
+        });
+
+        if (choice === 1) {
+          isClosing = true;
+          mainWindow.close();
+        }
+      } else {
+        isClosing = true;
+        mainWindow.close();
+      }
+    } catch (err) {
+      console.error('Error checking incognito tabs:', err);
+      isClosing = true;
+      mainWindow.close();
+    }
+  });
+
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+    console.error('Page failed to load:', errorCode, errorDescription);
+  });
+
+  mainWindow.webContents.on('crashed', () => {
+    console.error('Renderer process crashed!');
+  });
 }
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.whenReady().then(async () => {
-  // --- Advanced Ad-Blocker Implementation ---
-  // We are now using `fromLists` to load more specific filter lists
-  // that help combat ad-blocker detection scripts and other annoyances.
-  try {
-    const blocker = await ElectronBlocker.fromLists(fetch, [
-      'https://easylist.to/easylist/easylist.txt',
-      'https://easylist.to/easylist/easyprivacy.txt',
-      // This list is crucial for blocking "annoyances" like cookie notices,
-      // newsletter pop-ups, and many anti-adblock scripts.
-      'https://easylist.to/easylist/fanboy-annoyance.txt',
-    ]);
-    console.log('Ad-blocker engine initialized.');
-
-    // Hook the blocker into the default session.
-    blocker.enableBlockingInSession(session.defaultSession);
-
-    console.log('Ad-blocker is now active.');
-    blocker.on('request-blocked', (request) => {
-      // This can be noisy, so it's commented out, but useful for debugging.
-      // console.log('Blocked:', request.url);
-    });
-  } catch (err) {
-    console.error('Failed to initialize ad-blocker engine:', err);
-  }
-
   // --- Block Insecure HTTP Requests ---
-  // This will cancel any top-level navigation to an http:// URL.
+  // This will cancel any top-level navigation to an http:// URL, except for localhost.
   session.defaultSession.webRequest.onBeforeRequest({
     urls: ['http://*/*']
   }, (details, callback) => {
-    if (details.resourceType === 'mainFrame') {
-      console.log(`Blocking insecure navigation to: ${details.url}`);
+    const url = details.url;
+    if (details.resourceType === 'mainFrame' &&
+      !url.includes('localhost') &&
+      !url.includes('127.0.0.1')) {
+      console.log(`Blocking insecure navigation to: ${url}`);
       callback({ cancel: true }); // Block the request
     } else {
-      callback({ cancel: false }); // Allow other requests (e.g., images on an https page)
+      callback({ cancel: false }); // Allow other requests
     }
   });
 
-  createWindow(); // <-- This was missing, now it's fixed.
+  // --- Handle Downloads ---
+  session.defaultSession.on('will-download', (event, item, webContents) => {
+    const filePath = item.getSavePath();
+
+    item.once('done', (event, state) => {
+      if (state === 'completed') {
+        // Send download info to renderer
+        // We need to send this to the main window, or the webContents that initiated it
+        // Since the UI is in the main window, we should send it there.
+        // However, webContents here is the one that initiated the download.
+        // If the download came from a <webview>, we might need to forward it to the host page.
+
+        // Find the main window to send the event to
+        const windows = BrowserWindow.getAllWindows();
+        const mainWindow = windows[0]; // Assuming the first one is the main one
+
+        if (mainWindow) {
+          mainWindow.webContents.send('download-completed', {
+            filename: item.getFilename(),
+            file_path: filePath,
+            file_size: item.getTotalBytes(),
+            mime_type: item.getMimeType(),
+            source_url: item.getURL()
+          });
+        }
+      }
+    });
+  });
+
+  // --- Handle Show Item In Folder ---
+  ipcMain.on('show-item-in-folder', (event, filePath) => {
+    const { shell } = require('electron');
+    shell.showItemInFolder(filePath);
+  });
+
+  // --- Handle Open External URL ---
+  ipcMain.on('open-external', (event, url) => {
+    require('electron').shell.openExternal(url);
+  });
+
+  createWindow();
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
@@ -94,4 +181,8 @@ app.whenReady().then(async () => {
 // Quit when all windows are closed, except on macOS.
 app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
 });
