@@ -3,6 +3,8 @@
 // Modules to control application life and create native browser window
 const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('path');
+const { ElectronBlocker } = require('@ghostery/adblocker-electron');
+const fetch = require('cross-fetch');
 
 function createWindow() {
   // Create the browser window.
@@ -113,6 +115,57 @@ function createWindow() {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.whenReady().then(async () => {
+  // --- Initialize Ad-Blocker ---
+  let blocker = null;
+  let adBlockEnabled = true; // Default to enabled
+  let blockedCount = 0;
+
+  try {
+    blocker = await ElectronBlocker.fromPrebuiltAdsAndTracking(fetch);
+    console.log('Ad-blocker initialized successfully');
+
+    // Enable blocker by default
+    blocker.enableBlockingInSession(session.defaultSession);
+
+    // Track blocked requests
+    blocker.on('request-blocked', (request) => {
+      blockedCount++;
+      console.log('Blocked:', request.url);
+    });
+  } catch (error) {
+    console.error('Failed to initialize ad-blocker:', error);
+  }
+
+  // IPC handlers for ad-blocker
+  ipcMain.handle('adblocker-toggle', async (event, enabled) => {
+    if (!blocker) return { success: false, error: 'Ad-blocker not initialized' };
+
+    adBlockEnabled = enabled;
+
+    if (enabled) {
+      blocker.enableBlockingInSession(session.defaultSession);
+      console.log('Ad-blocker enabled');
+    } else {
+      blocker.disableBlockingInSession(session.defaultSession);
+      console.log('Ad-blocker disabled');
+    }
+
+    return { success: true, enabled: adBlockEnabled };
+  });
+
+  ipcMain.handle('adblocker-stats', async () => {
+    return {
+      enabled: adBlockEnabled,
+      blockedCount: blockedCount,
+      hasBlocker: blocker !== null
+    };
+  });
+
+  ipcMain.handle('adblocker-reset-count', async () => {
+    blockedCount = 0;
+    return { success: true };
+  });
+
   // --- Block Insecure HTTP Requests ---
   // This will cancel any top-level navigation to an http:// URL, except for localhost.
   session.defaultSession.webRequest.onBeforeRequest({

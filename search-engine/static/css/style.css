@@ -1396,3 +1396,111 @@ input:checked+.slider:before {
 .code-input:focus {
     border-color: var(--accent-primary);
 }
+
+/* === AD-BLOCKER TOGGLE === */
+.menu-divider {
+    height: 1px;
+    background: var(--glass-border);
+    margin: 8px 0;
+}
+
+.menu-item-toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+}
+
+.menu-item-toggle:hover {
+    background: var(--surface-hover);
+}
+
+.menu-item-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.badge {
+    background: var(--accent-primary);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 10px;
+    min-width: 20px;
+    text-align: center;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    50% {
+        opacity: 0.8;
+        transform: scale(0.95);
+    }
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    cursor: pointer;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 24px;
+    transition: var(--transition-smooth);
+    border: 1px solid var(--glass-border);
+}
+
+.toggle-slider:before {
+    content: "";
+    position: absolute;
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--text-secondary);
+    border-radius: 50%;
+    transition: var(--transition-smooth);
+}
+
+.toggle-switch input:checked+.toggle-slider {
+    background-color: var(--accent-primary);
+    border-color: var(--accent-primary);
+}
+
+.toggle-switch input:checked+.toggle-slider:before {
+    transform: translateX(20px);
+    background-color: white;
+}
+
+.toggle-switch:hover .toggle-slider {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.toggle-switch input:checked:hover+.toggle-slider {
+    background-color: var(--accent-primary-hover);
+}

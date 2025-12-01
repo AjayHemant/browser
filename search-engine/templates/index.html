@@ -121,6 +121,23 @@
                         </svg>
                         <span>Extensions</span>
                     </div>
+
+                    <div class="menu-divider"></div>
+
+                    <div class="menu-item menu-item-toggle" id="menu-adblocker">
+                        <div class="menu-item-left">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                            </svg>
+                            <span>Ad-Blocker</span>
+                            <span id="adblocker-badge" class="badge">0</span>
+                        </div>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="adblocker-toggle" checked>
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
                 </div>
 
 
@@ -392,6 +409,7 @@
         </div>
     </div>
 
+    <script src="{{ url_for('static', filename='js/adblocker-manager.js') }}?v=1"></script>
     <script src="{{ url_for('static', filename='js/extensions-manager.js') }}?v=2"></script>
     <script src="{{ url_for('static', filename='js/downloads-manager.js') }}?v=2"></script>
     <script src="{{ url_for('static', filename='js/history-manager.js') }}?v=1"></script>
